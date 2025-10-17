@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var isRightFullscreen = false
     var splitRatio: CGFloat = 0.30  // Left panel width as percentage (default 30%)
     private var settingsWindow: SettingsWindow?
+    private var aboutWindow: AboutWindowController?
 
     private enum Prefs {
         static let savedFrame = "LayoutControllerSavedFrame"
@@ -89,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "About Tessera", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About Tessera", action: #selector(showAbout), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         appMenu.addItem(NSMenuItem.separator())
@@ -211,6 +212,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
         settingsWindow?.orderFrontRegardless()
+    }
+
+    @objc func showAbout() {
+        if aboutWindow == nil {
+            aboutWindow = AboutWindowController()
+        }
+        aboutWindow?.show()
     }
 
     // MARK: - Window delegate
