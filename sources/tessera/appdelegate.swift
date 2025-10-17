@@ -145,10 +145,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     leftTerm.isHidden = false
                 }
             }
+            // Restore transparent backgrounds and show header
+            applyWindowOpacity()
+            right.setOpaqueBackground(false)
+            right.setHeaderHidden(false)
             relayout()
         } else {
             // Make fullscreen - fill entire window except toolbar
             isRightFullscreen = true
+
+            // Set solid black backgrounds for fullscreen and hide header
+            window.backgroundColor = NSColor.black
+            right.setOpaqueBackground(true)
+            right.setHeaderHidden(true)
 
             let fullFrame = NSRect(
                 x: 0,
