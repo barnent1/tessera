@@ -21,6 +21,12 @@ cp ".build/release/Tessera" "${MACOS_DIR}/${APP_NAME}"
 # Copy Info.plist
 cp info.plist "${APP_DIR}/Contents/Info.plist"
 
+# Copy icon if it exists
+if [ -f "sources/resources/AppIcon.icns" ]; then
+    cp sources/resources/AppIcon.icns "${RES_DIR}/"
+    echo "📦 Copied AppIcon.icns"
+fi
+
 echo "✅ built ${APP_DIR}"
 echo "run: open ${APP_DIR}"
 echo "first run: grant Accessibility in System Settings → Privacy & Security → Accessibility."
