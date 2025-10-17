@@ -116,6 +116,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Always add to left panel
         leftTerminals.append(terminal)
 
+        // Set terminal number (1-indexed for display)
+        terminal.updateTerminalNumber(leftTerminals.count)
+
         // Add to view hierarchy - make sure it's visible
         contentView.addSubview(terminal)
         terminal.isHidden = false
@@ -356,11 +359,33 @@ class ContentView: NSView {
             height: bounds.height - toolbarHeight
         )
 
+        // Check divider first
         if dividerRect.contains(location) {
             NSCursor.resizeLeftRight.set()
-        } else {
-            NSCursor.arrow.set()
+            return
         }
+
+        // Check if hovering over any terminal header
+        let headerHeight: CGFloat = 24
+        for (index, _) in appDelegate.leftTerminals.enumerated() {
+            guard index < leftPanelFrames.count else { continue }
+
+            let panelFrame = leftPanelFrames[index]
+            let headerFrame = NSRect(
+                x: panelFrame.origin.x,
+                y: panelFrame.maxY - headerHeight,
+                width: panelFrame.width,
+                height: headerHeight
+            )
+
+            if headerFrame.contains(location) {
+                NSCursor.openHand.set()
+                return
+            }
+        }
+
+        // Default cursor
+        NSCursor.arrow.set()
     }
 
     func setupButtons() {
@@ -494,10 +519,23 @@ class ContentView: NSView {
             return
         }
 
-        // Check if click is in any left panel - record as potential drag
-        for (index, frame) in leftPanelFrames.enumerated() {
-            if frame.contains(location) {
-                print("Tessera: potential drag/click on left panel \(index) at \(location)")
+        // Check if click is in any left terminal header - record as potential drag
+        for (index, terminal) in appDelegate.leftTerminals.enumerated() {
+            guard index < leftPanelFrames.count else { continue }
+
+            let panelFrame = leftPanelFrames[index]
+
+            // Calculate header frame (top 24px of the terminal panel)
+            let headerHeight: CGFloat = 24
+            let headerFrame = NSRect(
+                x: panelFrame.origin.x,
+                y: panelFrame.maxY - headerHeight,
+                width: panelFrame.width,
+                height: headerHeight
+            )
+
+            if headerFrame.contains(location) {
+                print("Tessera: potential drag/click on terminal \(index) header at \(location)")
                 dragStartLocation = location
                 draggedTerminalIndex = index
                 // Don't promote yet - wait to see if user drags or just clicks
@@ -529,6 +567,7 @@ class ContentView: NSView {
             if !isDraggingTerminal && distance > dragThreshold {
                 // Start drag operation
                 isDraggingTerminal = true
+                NSCursor.closedHand.set()
                 print("Tessera: drag started for terminal \(dragIndex)")
             }
 
@@ -571,9 +610,10 @@ class ContentView: NSView {
                     print("Tessera: drag cancelled - dropped outside right panel")
                 }
 
-                // Reset drag state
+                // Reset drag state and cursor
                 isDraggingTerminal = false
                 draggedTerminalIndex = nil
+                NSCursor.arrow.set()
                 needsDisplay = true
             } else {
                 // No drag occurred (below threshold) - treat as click
