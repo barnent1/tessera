@@ -4,9 +4,9 @@ class AboutWindowController: NSWindowController {
     private var aboutWindow: NSWindow!
 
     init() {
-        // Create window with fixed size
+        // Create window with larger fixed size
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 420),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -39,10 +39,11 @@ class AboutWindowController: NSWindowController {
         containerView.autoresizingMask = [.width, .height]
         contentView.addSubview(containerView)
 
-        var yPosition: CGFloat = 280
+        let windowWidth: CGFloat = 480
+        var yPosition: CGFloat = 370
 
-        // App Icon
-        let iconView = NSImageView(frame: NSRect(x: 136, y: yPosition - 128, width: 128, height: 128))
+        // App Icon (move down to give more space)
+        let iconView = NSImageView(frame: NSRect(x: (windowWidth - 128) / 2, y: yPosition - 128, width: 128, height: 128))
         if let iconPath = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
            let icon = NSImage(contentsOfFile: iconPath) {
             iconView.image = icon
@@ -52,43 +53,43 @@ class AboutWindowController: NSWindowController {
         }
         containerView.addSubview(iconView)
 
-        yPosition -= 140
+        yPosition -= 150  // More space below icon
 
         // App Name
         let nameLabel = NSTextField(labelWithString: "Tessera")
-        nameLabel.font = NSFont.systemFont(ofSize: 24, weight: .bold)
+        nameLabel.font = NSFont.systemFont(ofSize: 26, weight: .bold)
         nameLabel.alignment = .center
-        nameLabel.frame = NSRect(x: 0, y: yPosition, width: 400, height: 30)
+        nameLabel.frame = NSRect(x: 0, y: yPosition, width: windowWidth, height: 35)
         containerView.addSubview(nameLabel)
 
-        yPosition -= 30
+        yPosition -= 40  // More spacing
 
         // Version
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let versionLabel = NSTextField(labelWithString: "Version \(version)")
-        versionLabel.font = NSFont.systemFont(ofSize: 12)
+        versionLabel.font = NSFont.systemFont(ofSize: 13)
         versionLabel.textColor = .secondaryLabelColor
         versionLabel.alignment = .center
-        versionLabel.frame = NSRect(x: 0, y: yPosition, width: 400, height: 20)
+        versionLabel.frame = NSRect(x: 0, y: yPosition, width: windowWidth, height: 22)
         containerView.addSubview(versionLabel)
 
-        yPosition -= 35
+        yPosition -= 35  // More spacing
 
         // Author
         let authorLabel = NSTextField(labelWithString: "by Glen Barnhardt")
-        authorLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        authorLabel.font = NSFont.systemFont(ofSize: 15, weight: .medium)
         authorLabel.alignment = .center
-        authorLabel.frame = NSRect(x: 0, y: yPosition, width: 400, height: 20)
+        authorLabel.frame = NSRect(x: 0, y: yPosition, width: windowWidth, height: 24)
         containerView.addSubview(authorLabel)
 
-        yPosition -= 35
+        yPosition -= 45  // More spacing before description
 
-        // Description
+        // Description (wider with more padding)
         let description = "A macOS menu bar app for tiling Alacritty terminal windows. " +
                          "Tessera creates a working pane layout with one large terminal " +
                          "on the right and multiple smaller terminals tiling on the left."
 
-        let descriptionLabel = createWrappingLabel(text: description, width: 340)
+        let descriptionLabel = createWrappingLabel(text: description, width: 420)
         descriptionLabel.frame.origin = NSPoint(x: 30, y: yPosition - descriptionLabel.frame.height)
         containerView.addSubview(descriptionLabel)
     }
