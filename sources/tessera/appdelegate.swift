@@ -300,6 +300,13 @@ class ContentView: NSView {
     private var isDraggingDivider = false
     private let dividerHitWidth: CGFloat = 8  // Wider hit area for easier grabbing
 
+    // Drag-and-drop state
+    private var isDraggingTerminal = false
+    private var draggedTerminalIndex: Int?
+    private var dragStartLocation: NSPoint = .zero
+    private var currentDragLocation: NSPoint = .zero
+    private let dragThreshold: CGFloat = 5.0  // Minimum distance to start drag
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupUI()
@@ -382,6 +389,27 @@ class ContentView: NSView {
         // Draw panel dividers with light gray
         let leftWidth = bounds.width * appDelegate.splitRatio
 
+        // If dragging a terminal, highlight the right panel as drop zone
+        if isDraggingTerminal {
+            let rightPanelRect = NSRect(
+                x: leftWidth,
+                y: toolbarHeight,
+                width: bounds.width - leftWidth,
+                height: bounds.height - toolbarHeight
+            )
+
+            // Check if cursor is over right panel
+            if rightPanelRect.contains(currentDragLocation) {
+                // Highlight drop zone with green tint
+                NSColor.green.withAlphaComponent(0.15).setFill()
+                NSBezierPath(rect: rightPanelRect).fill()
+            } else {
+                // Show neutral drop zone
+                NSColor.gray.withAlphaComponent(0.1).setFill()
+                NSBezierPath(rect: rightPanelRect).fill()
+            }
+        }
+
         // Draw vertical divider between left and right panels
         NSColor.darkGray.setStroke()
         let verticalDivider = NSBezierPath()
@@ -402,8 +430,27 @@ class ContentView: NSView {
                 divider.stroke()
             }
 
+            // Highlight panel being dragged
+            if isDraggingTerminal, let dragIndex = draggedTerminalIndex, dragIndex == index {
+                NSColor.blue.withAlphaComponent(0.2).setFill()
+                NSBezierPath(rect: frame).fill()
+
+                // Draw drag indicator
+                let indicator = "⇢ Dragging..."
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                    .foregroundColor: NSColor.white
+                ]
+                let attrStr = NSAttributedString(string: indicator, attributes: attrs)
+                let textSize = attrStr.size()
+                let textOrigin = NSPoint(
+                    x: frame.midX - textSize.width / 2,
+                    y: frame.midY - textSize.height / 2
+                )
+                attrStr.draw(at: textOrigin)
+            }
             // Draw indicator for the terminal being shown on right
-            if let appDelegate = delegate,
+            else if let appDelegate = delegate,
                let rightTerminal = appDelegate.rightTerminal,
                index < appDelegate.leftTerminals.count,
                appDelegate.leftTerminals[index] === rightTerminal {
@@ -447,36 +494,94 @@ class ContentView: NSView {
             return
         }
 
-        // Check if click is in any left panel
+        // Check if click is in any left panel - record as potential drag
         for (index, frame) in leftPanelFrames.enumerated() {
             if frame.contains(location) {
-                print("Tessera: clicked left panel \(index) at \(location) in frame \(frame)")
-                delegate?.promoteLeftTerminal(at: index)
+                print("Tessera: potential drag/click on left panel \(index) at \(location)")
+                dragStartLocation = location
+                draggedTerminalIndex = index
+                // Don't promote yet - wait to see if user drags or just clicks
                 return
             }
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isDraggingDivider, let appDelegate = delegate else { return }
-
         let location = convert(event.locationInWindow, from: nil)
 
-        // Calculate new split ratio, constrained between 15% and 85%
-        let newRatio = max(0.15, min(0.85, location.x / bounds.width))
-        appDelegate.splitRatio = newRatio
-        appDelegate.relayout()
+        guard let appDelegate = delegate else { return }
 
-        needsDisplay = true
+        // Handle divider dragging
+        if isDraggingDivider {
+            // Calculate new split ratio, constrained between 15% and 85%
+            let newRatio = max(0.15, min(0.85, location.x / bounds.width))
+            appDelegate.splitRatio = newRatio
+            appDelegate.relayout()
+            needsDisplay = true
+            return
+        }
+
+        // Handle terminal dragging
+        if let dragIndex = draggedTerminalIndex {
+            // Check if we've exceeded the drag threshold
+            let distance = hypot(location.x - dragStartLocation.x, location.y - dragStartLocation.y)
+
+            if !isDraggingTerminal && distance > dragThreshold {
+                // Start drag operation
+                isDraggingTerminal = true
+                print("Tessera: drag started for terminal \(dragIndex)")
+            }
+
+            if isDraggingTerminal {
+                // Update drag location and trigger redraw for visual feedback
+                currentDragLocation = location
+                needsDisplay = true
+            }
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        // Save the new split ratio if we were dragging
+        let location = convert(event.locationInWindow, from: nil)
+
+        guard let appDelegate = delegate else { return }
+
+        // Handle divider drag completion
         if isDraggingDivider {
             delegate?.saveFrame()
+            isDraggingDivider = false
+            return
         }
 
-        isDraggingDivider = false
+        // Handle terminal drag completion
+        if let dragIndex = draggedTerminalIndex {
+            if isDraggingTerminal {
+                // Complete drag operation - check if dropped on right panel
+                let leftWidth = bounds.width * appDelegate.splitRatio
+                let rightPanelRect = NSRect(
+                    x: leftWidth,
+                    y: toolbarHeight,
+                    width: bounds.width - leftWidth,
+                    height: bounds.height - toolbarHeight
+                )
+
+                if rightPanelRect.contains(location) {
+                    print("Tessera: drag completed - promoting terminal \(dragIndex) to right panel")
+                    delegate?.promoteLeftTerminal(at: dragIndex)
+                } else {
+                    print("Tessera: drag cancelled - dropped outside right panel")
+                }
+
+                // Reset drag state
+                isDraggingTerminal = false
+                draggedTerminalIndex = nil
+                needsDisplay = true
+            } else {
+                // No drag occurred (below threshold) - treat as click
+                print("Tessera: click detected on terminal \(dragIndex) - promoting to right panel")
+                delegate?.promoteLeftTerminal(at: dragIndex)
+                draggedTerminalIndex = nil
+            }
+        }
     }
 
     override func resize(withOldSuperviewSize oldSize: NSSize) {
