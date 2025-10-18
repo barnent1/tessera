@@ -132,6 +132,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         print("Tessera: relayout completed, leftTerminals.count = \(leftTerminals.count)")
     }
 
+    func closeTerminal(_ terminal: TerminalView) {
+        print("Tessera: closing terminal")
+
+        // If this is the right terminal, clear it and mark as not main
+        if terminal === rightTerminal {
+            terminal.isMainTerminal = false
+            rightTerminal?.removeFromSuperview()
+            rightTerminal = nil
+        }
+
+        // Remove from left terminals array
+        if let index = leftTerminals.firstIndex(where: { $0 === terminal }) {
+            leftTerminals.remove(at: index)
+            terminal.removeFromSuperview()
+
+            // Update terminal numbers
+            for (idx, term) in leftTerminals.enumerated() {
+                term.updateTerminalNumber(idx + 1)
+            }
+
+            // Just relayout - don't auto-promote anything
+            relayout()
+        }
+
+        print("Tessera: terminal closed, remaining count: \(leftTerminals.count)")
+    }
+
     @objc func toggleFullscreen() {
         guard let right = rightTerminal else {
             print("Tessera: No terminal selected for fullscreen")
@@ -189,14 +216,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let leftTerm = leftTerminals[index]
 
-        // Hide the old right terminal if it exists
+        // Hide the old right terminal if it exists and mark as not main
         if let oldRight = rightTerminal {
             oldRight.isHidden = true
+            oldRight.isMainTerminal = false
         }
 
-        // Show the selected left terminal in the right panel
+        // Show the selected left terminal in the right panel and mark as main
         rightTerminal = leftTerm
+        leftTerm.isMainTerminal = true
 
+        relayout()
+    }
+
+    func returnTerminalToLeft(_ terminal: TerminalView) {
+        // Only process if this is the current right terminal
+        guard terminal === rightTerminal else { return }
+
+        print("Tessera: returning terminal to left panel")
+
+        // Mark as not main terminal anymore
+        terminal.isMainTerminal = false
+
+        // Clear right terminal - don't promote anything else
+        rightTerminal = nil
+
+        // Make sure the terminal is visible (it will show in left panel)
+        terminal.isHidden = false
+
+        // Relayout to show all terminals in left panel only
         relayout()
     }
 
@@ -406,18 +454,22 @@ class ContentView: NSView {
     }
 
     func setupButtons() {
-        // '+' button
-        let addButton = NSButton(frame: NSRect(x: 10, y: 7, width: 30, height: 30))
-        addButton.title = "+"
+        // '+' button - larger size
+        let addButton = NSButton(frame: NSRect(x: 10, y: 5, width: 34, height: 34))
+        addButton.title = ""
         addButton.bezelStyle = .rounded
+        addButton.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "Add Terminal")
+        addButton.contentTintColor = NSColor.systemGreen
         addButton.target = delegate
         addButton.action = #selector(AppDelegate.addNewTerminal)
         toolbar.addSubview(addButton)
 
-        // Fullscreen toggle button
-        let fullscreenButton = NSButton(frame: NSRect(x: 50, y: 7, width: 100, height: 30))
-        fullscreenButton.title = "⤢ Fullscreen"
+        // Fullscreen toggle button - icon only
+        let fullscreenButton = NSButton(frame: NSRect(x: 52, y: 5, width: 34, height: 34))
+        fullscreenButton.title = ""
         fullscreenButton.bezelStyle = .rounded
+        fullscreenButton.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: "Toggle Fullscreen")
+        fullscreenButton.contentTintColor = NSColor.systemBlue
         fullscreenButton.target = delegate
         fullscreenButton.action = #selector(AppDelegate.toggleFullscreen)
         toolbar.addSubview(fullscreenButton)

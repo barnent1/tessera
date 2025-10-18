@@ -4,8 +4,22 @@ import SwiftTerm
 class TerminalView: NSView {
     private var terminalView: LocalProcessTerminalView!
     private var headerView: NSView!
+    private var nameLabel: NSTextField!  // Editable terminal name
+    private var returnButton: NSButton!  // Button to return to left panel
     let headerHeight: CGFloat = 24
+    let headerPadding: CGFloat = 2  // Small gap between header and terminal content
     var terminalNumber: Int = 0
+    var terminalName: String = "Terminal" {
+        didSet {
+            nameLabel?.stringValue = terminalName
+        }
+    }
+    var isMainTerminal: Bool = false {
+        didSet {
+            // Show/hide return button based on whether this is the main terminal
+            returnButton?.isHidden = !isMainTerminal
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -24,6 +38,24 @@ class TerminalView: NSView {
     }
 
     override var isOpaque: Bool { return false }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+
+        // Don't adjust frames if header is hidden (fullscreen mode)
+        if headerView != nil && terminalView != nil && !headerView.isHidden {
+            let headerFrame = NSRect(x: 0, y: bounds.height - headerHeight, width: bounds.width, height: headerHeight)
+            headerView.frame = headerFrame
+
+            // Terminal starts below header with padding
+            let terminalFrame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height - headerHeight - headerPadding)
+            terminalView.frame = terminalFrame
+        } else if headerView != nil && terminalView != nil && headerView.isHidden {
+            // In fullscreen mode, terminal fills entire view
+            terminalView.frame = bounds
+            headerView.frame = NSRect(x: 0, y: bounds.height, width: 0, height: 0)
+        }
+    }
 
     private func setupUI() {
         wantsLayer = true
@@ -48,21 +80,52 @@ class TerminalView: NSView {
         dragIcon.drawsBackground = false
         headerView.addSubview(dragIcon)
 
-        // Add terminal number on right
-        let numberLabel = NSTextField(labelWithString: "#\(terminalNumber)")
-        numberLabel.font = NSFont.systemFont(ofSize: 11)
-        numberLabel.textColor = NSColor.gray
-        numberLabel.alignment = .right
-        numberLabel.frame = NSRect(x: bounds.width - 50, y: 5, width: 44, height: 14)
-        numberLabel.autoresizingMask = [.minXMargin]
-        numberLabel.isEditable = false
-        numberLabel.isSelectable = false
-        numberLabel.isBordered = false
-        numberLabel.drawsBackground = false
-        headerView.addSubview(numberLabel)
+        // Add editable terminal name label in center
+        nameLabel = DoubleClickTextField(string: terminalName)
+        nameLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        nameLabel.textColor = NSColor.lightGray
+        nameLabel.alignment = .center
+        nameLabel.frame = NSRect(x: 30, y: 5, width: bounds.width - 80, height: 14)
+        nameLabel.autoresizingMask = [.width]
+        nameLabel.isEditable = false  // Only editable on double-click
+        nameLabel.isSelectable = false
+        nameLabel.isBordered = false
+        nameLabel.drawsBackground = false
+        nameLabel.focusRingType = .none
+        nameLabel.delegate = self
+        nameLabel.target = self
+        nameLabel.action = #selector(nameFieldChanged)
+        (nameLabel as? DoubleClickTextField)?.terminalView = self
+        headerView.addSubview(nameLabel)
 
-        // Create SwiftTerm terminal view below header
-        let terminalFrame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height - headerHeight)
+        // Add return button (hidden by default, shown when in main panel)
+        returnButton = NSButton(frame: NSRect(x: bounds.width - 40, y: 4, width: 16, height: 16))
+        returnButton.title = ""
+        returnButton.bezelStyle = .inline
+        returnButton.isBordered = false
+        returnButton.image = NSImage(systemSymbolName: "arrow.left.circle.fill", accessibilityDescription: "Return to Left")
+        returnButton.contentTintColor = NSColor.systemBlue
+        returnButton.target = self
+        returnButton.action = #selector(returnToLeft)
+        returnButton.autoresizingMask = [.minXMargin]
+        returnButton.isHidden = true  // Hidden by default
+        headerView.addSubview(returnButton)
+
+        // Add close button on far right
+        let closeButton = NSButton(frame: NSRect(x: bounds.width - 22, y: 4, width: 16, height: 16))
+        closeButton.title = ""
+        closeButton.bezelStyle = .inline
+        closeButton.isBordered = false
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        closeButton.contentTintColor = NSColor.gray
+        closeButton.target = self
+        closeButton.action = #selector(closeTerminal)
+        closeButton.autoresizingMask = [.minXMargin]
+        headerView.addSubview(closeButton)
+
+        // Create SwiftTerm terminal view below header with padding
+        // Note: In AppKit, y=0 is at bottom, so terminal occupies bottom portion
+        let terminalFrame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height - headerHeight - headerPadding)
         terminalView = LocalProcessTerminalView(frame: terminalFrame)
         terminalView.autoresizingMask = [.width, .height]
 
@@ -162,11 +225,28 @@ class TerminalView: NSView {
 
     func updateTerminalNumber(_ number: Int) {
         terminalNumber = number
-
-        // Update the number label if it exists
-        if let numberLabel = headerView.subviews.last as? NSTextField {
-            numberLabel.stringValue = "#\(number)"
+        // Update default name if user hasn't customized it
+        if terminalName == "Terminal" || terminalName.hasPrefix("Terminal ") {
+            terminalName = "Terminal \(number)"
         }
+    }
+
+    @objc private func nameFieldChanged() {
+        terminalName = nameLabel.stringValue
+        // Move focus back to terminal
+        window?.makeFirstResponder(terminalView)
+    }
+
+    @objc private func closeTerminal() {
+        // Notify the app delegate to remove this terminal
+        guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+        appDelegate.closeTerminal(self)
+    }
+
+    @objc private func returnToLeft() {
+        // Return this terminal from main panel to left panel
+        guard let appDelegate = NSApplication.shared.delegate as? AppDelegate else { return }
+        appDelegate.returnTerminalToLeft(self)
     }
 
     // Set terminal background to solid black for fullscreen mode
@@ -187,14 +267,21 @@ class TerminalView: NSView {
     func setHeaderHidden(_ hidden: Bool) {
         headerView.isHidden = hidden
 
-        // Adjust terminal view frame to fill the space
+        // Force layout update after hiding/showing
         if hidden {
             // Expand terminal to fill entire view
             terminalView.frame = bounds
+            // Ensure header is completely out of view
+            headerView.frame = NSRect(x: 0, y: bounds.height, width: 0, height: 0)
         } else {
-            // Restore terminal below header
-            terminalView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height - headerHeight)
+            // Restore header at top
+            headerView.frame = NSRect(x: 0, y: bounds.height - headerHeight, width: bounds.width, height: headerHeight)
+            // Restore terminal below header with padding
+            terminalView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height - headerHeight - headerPadding)
         }
+
+        needsLayout = true
+        layoutSubtreeIfNeeded()
     }
 
     // Get the header frame in window coordinates for drag detection
@@ -202,6 +289,64 @@ class TerminalView: NSView {
         guard let window = window else { return nil }
         let headerFrameInView = headerView.frame
         return convert(headerFrameInView, to: nil)
+    }
+}
+
+// MARK: - NSTextFieldDelegate
+
+extension TerminalView: NSTextFieldDelegate {
+    func controlTextDidEndEditing(_ obj: Notification) {
+        // Save the terminal name when editing ends
+        terminalName = nameLabel.stringValue
+        // Disable editing again
+        (nameLabel as? DoubleClickTextField)?.finishEditing()
+        // Return focus to terminal
+        window?.makeFirstResponder(terminalView)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        // Handle Enter key to finish editing
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            terminalName = nameLabel.stringValue
+            (nameLabel as? DoubleClickTextField)?.finishEditing()
+            window?.makeFirstResponder(terminalView)
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: - Double Click Text Field
+
+class DoubleClickTextField: NSTextField {
+    weak var terminalView: TerminalView?
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            // Double-click: enable editing
+            isEditable = true
+            isSelectable = true
+            window?.makeFirstResponder(currentEditor())
+            currentEditor()?.selectAll(nil)
+        } else {
+            // Single click: forward to header for drag detection
+            superview?.mouseDown(with: event)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        // Forward drag events to header
+        superview?.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // Forward mouse up to header
+        superview?.mouseUp(with: event)
+    }
+
+    func finishEditing() {
+        isEditable = false
+        isSelectable = false
     }
 }
 
