@@ -248,6 +248,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         relayout()
     }
 
+    func reorderTerminal(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex < leftTerminals.count else { return }
+        guard destinationIndex <= leftTerminals.count else { return }
+
+        print("Tessera: reordering terminal from index \(sourceIndex) to \(destinationIndex)")
+
+        // Remove terminal from source position
+        let terminal = leftTerminals.remove(at: sourceIndex)
+
+        // Calculate adjusted insertion index
+        // If moving down (sourceIndex < destinationIndex), the removal shifts indices
+        let adjustedDestination = sourceIndex < destinationIndex ? destinationIndex - 1 : destinationIndex
+
+        // Insert at destination
+        leftTerminals.insert(terminal, at: adjustedDestination)
+
+        // Update terminal numbers
+        for (idx, term) in leftTerminals.enumerated() {
+            term.updateTerminalNumber(idx + 1)
+        }
+
+        // Relayout to update positions
+        relayout()
+    }
+
     @objc func saveFrame() {
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Prefs.savedFrame)
         UserDefaults.standard.synchronize()
@@ -374,6 +399,9 @@ class ContentView: NSView {
     private var dragStartLocation: NSPoint = .zero
     private var currentDragLocation: NSPoint = .zero
     private let dragThreshold: CGFloat = 5.0  // Minimum distance to start drag
+
+    // Reordering state
+    private var dropInsertionIndex: Int?  // Index where terminal would be inserted if dropped
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -530,7 +558,7 @@ class ContentView: NSView {
                 NSBezierPath(rect: frame).fill()
 
                 // Draw drag indicator
-                let indicator = "⇢ Dragging..."
+                let indicator = "⇢ Reordering..."
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 11, weight: .medium),
                     .foregroundColor: NSColor.white
@@ -565,6 +593,44 @@ class ContentView: NSView {
                     y: frame.midY - textSize.height / 2
                 )
                 attrStr.draw(at: textOrigin)
+            }
+        }
+
+        // Draw insertion line indicator when reordering
+        if isDraggingTerminal, let insertIndex = dropInsertionIndex, let dragIndex = draggedTerminalIndex {
+            // Don't draw if inserting at same position or adjacent position (no-op)
+            if insertIndex != dragIndex && insertIndex != dragIndex + 1 {
+                // Calculate Y position for insertion line
+                let insertY: CGFloat
+                if insertIndex == 0 {
+                    // Insert at top
+                    insertY = leftPanelFrames.first?.maxY ?? toolbarHeight
+                } else if insertIndex >= leftPanelFrames.count {
+                    // Insert at bottom
+                    insertY = leftPanelFrames.last?.minY ?? toolbarHeight
+                } else {
+                    // Insert between terminals
+                    insertY = leftPanelFrames[insertIndex - 1].minY
+                }
+
+                // Draw thick green insertion line
+                NSColor.systemGreen.setStroke()
+                let insertionLine = NSBezierPath()
+                insertionLine.move(to: NSPoint(x: 0, y: insertY))
+                insertionLine.line(to: NSPoint(x: leftWidth, y: insertY))
+                insertionLine.lineWidth = 3
+                insertionLine.stroke()
+
+                // Draw arrow indicators at the ends
+                let arrowSize: CGFloat = 6
+                for x in [arrowSize, leftWidth - arrowSize] {
+                    let arrowPath = NSBezierPath()
+                    arrowPath.move(to: NSPoint(x: x - arrowSize, y: insertY - arrowSize))
+                    arrowPath.line(to: NSPoint(x: x, y: insertY))
+                    arrowPath.line(to: NSPoint(x: x - arrowSize, y: insertY + arrowSize))
+                    NSColor.systemGreen.setFill()
+                    arrowPath.fill()
+                }
             }
         }
     }
@@ -643,9 +709,56 @@ class ContentView: NSView {
             if isDraggingTerminal {
                 // Update drag location and trigger redraw for visual feedback
                 currentDragLocation = location
+
+                // Calculate insertion index if dragging over left panel
+                let leftWidth = bounds.width * appDelegate.splitRatio
+                if location.x < leftWidth {
+                    // Dragging in left panel - calculate insertion position
+                    dropInsertionIndex = calculateInsertionIndex(at: location)
+                } else {
+                    // Dragging over right panel or elsewhere
+                    dropInsertionIndex = nil
+                }
+
                 needsDisplay = true
             }
         }
+    }
+
+    // Calculate where a terminal would be inserted if dropped at this location
+    private func calculateInsertionIndex(at location: NSPoint) -> Int? {
+        guard let appDelegate = delegate else { return nil }
+        guard !leftPanelFrames.isEmpty else { return nil }
+
+        // Find which slot the cursor is closest to
+        for (index, frame) in leftPanelFrames.enumerated() {
+            let frameMidY = frame.midY
+
+            if index == 0 {
+                // Check if above first terminal
+                if location.y > frame.maxY {
+                    return 0
+                }
+            }
+
+            // Check if between this terminal and the next
+            if index < leftPanelFrames.count - 1 {
+                let nextFrame = leftPanelFrames[index + 1]
+                let dividerY = frame.minY  // Divider is at the bottom of current frame
+
+                // If cursor is near this divider, insert after current terminal
+                if location.y <= frame.maxY && location.y >= nextFrame.minY {
+                    return index + 1
+                }
+            } else {
+                // Last terminal - check if below it
+                if location.y < frame.minY {
+                    return leftPanelFrames.count
+                }
+            }
+        }
+
+        return nil
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -663,25 +776,37 @@ class ContentView: NSView {
         // Handle terminal drag completion
         if let dragIndex = draggedTerminalIndex {
             if isDraggingTerminal {
-                // Complete drag operation - check if dropped on right panel
-                let leftWidth = bounds.width * appDelegate.splitRatio
-                let rightPanelRect = NSRect(
-                    x: leftWidth,
-                    y: toolbarHeight,
-                    width: bounds.width - leftWidth,
-                    height: bounds.height - toolbarHeight
-                )
-
-                if rightPanelRect.contains(location) {
-                    print("Tessera: drag completed - promoting terminal \(dragIndex) to right panel")
-                    delegate?.promoteLeftTerminal(at: dragIndex)
+                // Check if reordering in left panel
+                if let insertIndex = dropInsertionIndex {
+                    // Dropped in left panel for reordering
+                    if insertIndex != dragIndex && insertIndex != dragIndex + 1 {
+                        print("Tessera: reordering terminal from \(dragIndex) to \(insertIndex)")
+                        delegate?.reorderTerminal(from: dragIndex, to: insertIndex)
+                    } else {
+                        print("Tessera: drop at same position - no reorder needed")
+                    }
                 } else {
-                    print("Tessera: drag cancelled - dropped outside right panel")
+                    // Check if dropped on right panel
+                    let leftWidth = bounds.width * appDelegate.splitRatio
+                    let rightPanelRect = NSRect(
+                        x: leftWidth,
+                        y: toolbarHeight,
+                        width: bounds.width - leftWidth,
+                        height: bounds.height - toolbarHeight
+                    )
+
+                    if rightPanelRect.contains(location) {
+                        print("Tessera: drag completed - promoting terminal \(dragIndex) to right panel")
+                        delegate?.promoteLeftTerminal(at: dragIndex)
+                    } else {
+                        print("Tessera: drag cancelled - dropped outside valid area")
+                    }
                 }
 
                 // Reset drag state and cursor
                 isDraggingTerminal = false
                 draggedTerminalIndex = nil
+                dropInsertionIndex = nil
                 NSCursor.arrow.set()
                 needsDisplay = true
             } else {
