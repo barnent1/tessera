@@ -11,6 +11,9 @@ class Settings {
         static let backgroundColor = "backgroundColor"
         static let cursorColor = "cursorColor"
         static let projectsDirectory = "projectsDirectory"
+        static let anthropicApiKey = "anthropicApiKey"
+        static let openAIApiKey = "openAIApiKey"
+        static let geminiApiKey = "geminiApiKey"
     }
 
     // Notification for when settings change
@@ -111,6 +114,36 @@ class Settings {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.projectsDirectory)
+            postChangeNotification()
+        }
+    }
+
+    var anthropicApiKey: String {
+        get {
+            UserDefaults.standard.string(forKey: Keys.anthropicApiKey) ?? ""
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.anthropicApiKey)
+            postChangeNotification()
+        }
+    }
+
+    var openAIApiKey: String {
+        get {
+            UserDefaults.standard.string(forKey: Keys.openAIApiKey) ?? ""
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.openAIApiKey)
+            postChangeNotification()
+        }
+    }
+
+    var geminiApiKey: String {
+        get {
+            UserDefaults.standard.string(forKey: Keys.geminiApiKey) ?? ""
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.geminiApiKey)
             postChangeNotification()
         }
     }
