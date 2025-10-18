@@ -5,9 +5,13 @@ class SettingsWindow: NSWindow {
     private var fontSizeSlider: NSSlider!
     private var fontNamePopup: NSPopUpButton!
     private var foregroundColorWell: NSColorWell!
+    private var projectsDirectoryLabel: NSTextField!
+    private var anthropicApiKeyField: NSSecureTextField!
+    private var openAIApiKeyField: NSSecureTextField!
+    private var geminiApiKeyField: NSSecureTextField!
 
     init() {
-        let rect = NSRect(x: 0, y: 0, width: 400, height: 240)
+        let rect = NSRect(x: 0, y: 0, width: 400, height: 480)
         super.init(
             contentRect: rect,
             styleMask: [.titled, .closable],
@@ -25,10 +29,10 @@ class SettingsWindow: NSWindow {
     }
 
     private func setupUI() {
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 480))
         self.contentView = contentView
 
-        var yPos: CGFloat = 200
+        var yPos: CGFloat = 440
 
         // Opacity
         addLabel("Window Opacity:", at: NSPoint(x: 20, y: yPos), to: contentView)
@@ -79,6 +83,59 @@ class SettingsWindow: NSWindow {
         foregroundColorWell.target = self
         foregroundColorWell.action = #selector(foregroundColorChanged)
         contentView.addSubview(foregroundColorWell)
+        yPos -= 50
+
+        // Projects Directory
+        addLabel("Projects Directory:", at: NSPoint(x: 20, y: yPos + 10), to: contentView)
+
+        // Directory path label (truncated middle)
+        projectsDirectoryLabel = NSTextField(labelWithString: "")
+        projectsDirectoryLabel.frame = NSRect(x: 150, y: yPos + 10, width: 150, height: 20)
+        projectsDirectoryLabel.lineBreakMode = .byTruncatingMiddle
+        projectsDirectoryLabel.font = NSFont.systemFont(ofSize: 11)
+        contentView.addSubview(projectsDirectoryLabel)
+
+        // Choose button
+        let chooseButton = NSButton(frame: NSRect(x: 305, y: yPos + 6, width: 80, height: 28))
+        chooseButton.title = "Choose..."
+        chooseButton.bezelStyle = .rounded
+        chooseButton.target = self
+        chooseButton.action = #selector(chooseProjectsDirectory)
+        contentView.addSubview(chooseButton)
+        yPos -= 60
+
+        // API Keys Section
+        let apiKeysLabel = NSTextField(labelWithString: "API Keys")
+        apiKeysLabel.frame = NSRect(x: 20, y: yPos, width: 360, height: 20)
+        apiKeysLabel.font = NSFont.boldSystemFont(ofSize: 13)
+        contentView.addSubview(apiKeysLabel)
+        yPos -= 30
+
+        // Anthropic API Key
+        addLabel("Anthropic:", at: NSPoint(x: 20, y: yPos), to: contentView)
+        anthropicApiKeyField = NSSecureTextField(frame: NSRect(x: 150, y: yPos - 2, width: 230, height: 24))
+        anthropicApiKeyField.placeholderString = "sk-ant-..."
+        anthropicApiKeyField.target = self
+        anthropicApiKeyField.action = #selector(anthropicApiKeyChanged)
+        contentView.addSubview(anthropicApiKeyField)
+        yPos -= 35
+
+        // OpenAI API Key
+        addLabel("OpenAI:", at: NSPoint(x: 20, y: yPos), to: contentView)
+        openAIApiKeyField = NSSecureTextField(frame: NSRect(x: 150, y: yPos - 2, width: 230, height: 24))
+        openAIApiKeyField.placeholderString = "sk-..."
+        openAIApiKeyField.target = self
+        openAIApiKeyField.action = #selector(openAIApiKeyChanged)
+        contentView.addSubview(openAIApiKeyField)
+        yPos -= 35
+
+        // Gemini API Key
+        addLabel("Gemini:", at: NSPoint(x: 20, y: yPos), to: contentView)
+        geminiApiKeyField = NSSecureTextField(frame: NSRect(x: 150, y: yPos - 2, width: 230, height: 24))
+        geminiApiKeyField.placeholderString = "AIza..."
+        geminiApiKeyField.target = self
+        geminiApiKeyField.action = #selector(geminiApiKeyChanged)
+        contentView.addSubview(geminiApiKeyField)
 
         // Close button
         let closeButton = NSButton(frame: NSRect(x: 290, y: 20, width: 90, height: 30))
@@ -110,6 +167,14 @@ class SettingsWindow: NSWindow {
         }
 
         foregroundColorWell.color = settings.foregroundColor
+
+        // Load projects directory
+        projectsDirectoryLabel.stringValue = settings.projectsDirectory
+
+        // Load API keys
+        anthropicApiKeyField.stringValue = settings.anthropicApiKey
+        openAIApiKeyField.stringValue = settings.openAIApiKey
+        geminiApiKeyField.stringValue = settings.geminiApiKey
     }
 
     private func updateFontSizeLabel() {
@@ -137,6 +202,39 @@ class SettingsWindow: NSWindow {
 
     @objc private func foregroundColorChanged() {
         Settings.shared.foregroundColor = foregroundColorWell.color
+    }
+
+    @objc private func chooseProjectsDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Select the directory containing your projects"
+        panel.prompt = "Choose"
+
+        // Set initial directory to current setting
+        let currentPath = Settings.shared.projectsDirectory
+        panel.directoryURL = URL(fileURLWithPath: currentPath)
+
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+
+            Settings.shared.projectsDirectory = url.path
+            self?.projectsDirectoryLabel.stringValue = url.path
+        }
+    }
+
+    @objc private func anthropicApiKeyChanged() {
+        Settings.shared.anthropicApiKey = anthropicApiKeyField.stringValue
+    }
+
+    @objc private func openAIApiKeyChanged() {
+        Settings.shared.openAIApiKey = openAIApiKeyField.stringValue
+    }
+
+    @objc private func geminiApiKeyChanged() {
+        Settings.shared.geminiApiKey = geminiApiKeyField.stringValue
     }
 
     @objc private func closeWindow() {
