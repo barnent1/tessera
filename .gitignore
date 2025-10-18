@@ -33,3 +33,6 @@ xcuserdata/
 
 # Swift Package Manager
 .swiftpm/
+
+# Examples and external repos
+examples/
