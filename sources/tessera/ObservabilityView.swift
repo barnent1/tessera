@@ -31,6 +31,8 @@ class ObservabilityView: NSView {
     private var showFilters = false
     private var autoScrollEnabled = true
     private var currentFilters = (sourceApp: "", sessionId: "", eventType: "")
+    private var expandedRows = Set<Int>() // Track which rows are expanded
+    private var chatTranscriptWindow: ChatTranscriptWindow?
 
     // MARK: - Initialization
     override init(frame frameRect: NSRect) {
@@ -276,12 +278,20 @@ class ObservabilityView: NSView {
 
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.rowHeight = 32
+        tableView.usesAutomaticRowHeights = false // We'll manage row heights manually
         tableView.gridStyleMask = [.solidHorizontalGridLineMask]
         tableView.gridColor = NSColor(white: 1, alpha: 0.1)
         tableView.backgroundColor = NSColor(red: 0.12, green: 0.12, blue: 0.15, alpha: 1.0)
         tableView.headerView?.wantsLayer = true
         tableView.headerView?.layer?.backgroundColor = NSColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1.0).cgColor
+
+        // Enable row selection and click handling
+        tableView.allowsEmptySelection = true
+        tableView.allowsMultipleSelection = false
+        tableView.target = self
+        tableView.doubleAction = #selector(tableRowClicked)
+
+        print("ObservabilityView: Table view setup complete, doubleAction set")
 
         scrollView.translatesAutoresizingMaskIntoConstraints = true // Use manual layout
         scrollView.documentView = tableView
@@ -525,6 +535,33 @@ class ObservabilityView: NSView {
         }
     }
 
+    @objc private func tableRowClicked() {
+        let row = tableView.clickedRow
+        print("🖱️ Double-click detected on row: \(row)")
+
+        guard row >= 0 && row < filteredEvents.count else {
+            print("❌ Row \(row) is out of bounds (filteredEvents.count = \(filteredEvents.count))")
+            return
+        }
+
+        // Toggle expansion state
+        if expandedRows.contains(row) {
+            print("📤 Collapsing row \(row)")
+            expandedRows.remove(row)
+        } else {
+            print("📥 Expanding row \(row)")
+            expandedRows.insert(row)
+        }
+
+        print("📊 Expanded rows: \(expandedRows)")
+
+        // Reload the specific row with animation
+        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
+
+        // Force layout update
+        tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
+    }
+
     private func updateAutoScrollButtonStyle() {
         if autoScrollEnabled {
             autoScrollButton.layer?.backgroundColor = NSColor(red: 0.4, green: 0.2, blue: 0.8, alpha: 1.0).cgColor
@@ -546,9 +583,25 @@ extension ObservabilityView: NSTableViewDataSource {
 
 // MARK: - NSTableViewDelegate
 extension ObservabilityView: NSTableViewDelegate {
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        let isExpanded = expandedRows.contains(row)
+        let height: CGFloat = isExpanded ? 250 : 32
+        if isExpanded {
+            print("📏 Row \(row) height: \(height) (EXPANDED)")
+        }
+        return height
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard row < filteredEvents.count else { return nil }
         let event = filteredEvents[row]
+        let isExpanded = expandedRows.contains(row)
+
+        // If expanded, show expanded view in the details column (spans most of the width)
+        if isExpanded && tableColumn?.identifier.rawValue == "details" {
+            print("🎨 Creating expanded content view for row \(row) in 'details' column")
+            return createExpandedContentView(for: event, row: row)
+        }
 
         let cell = NSTextField(labelWithString: "")
         cell.drawsBackground = false
@@ -572,30 +625,35 @@ extension ObservabilityView: NSTableViewDelegate {
             return colorView
 
         case "emoji":
-            // Consistent emoji sizing
+            if isExpanded { return NSView() } // Hide in expanded mode
             cell.stringValue = event.emoji
             cell.font = NSFont.systemFont(ofSize: 14)
             cell.alignment = .center
 
         case "time":
+            if isExpanded { return NSView() }
             cell.stringValue = event.displayTimestamp
             cell.textColor = NSColor(white: 0.7, alpha: 1.0)
 
         case "app":
+            if isExpanded { return NSView() }
             cell.stringValue = event.sourceApp
             let appColor = ColorManager.shared.colorForApp(event.sourceApp)
             cell.textColor = appColor
             cell.font = NSFont.boldSystemFont(ofSize: 11)
 
         case "event":
+            if isExpanded { return NSView() }
             cell.stringValue = event.hookEventType
             cell.textColor = NSColor(red: 0.6, green: 0.6, blue: 0.8, alpha: 1.0)
 
         case "details":
+            // Already handled above if expanded
             cell.stringValue = event.displayText
             cell.textColor = .white
 
         case "summary":
+            if isExpanded { return NSView() }
             cell.stringValue = event.summary ?? ""
             cell.textColor = NSColor(white: 0.6, alpha: 1.0)
             cell.font = NSFont.systemFont(ofSize: 10)
@@ -608,7 +666,10 @@ extension ObservabilityView: NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let isExpanded = expandedRows.contains(row)
         let rowView = CustomTableRowView()
+        rowView.isExpanded = isExpanded
+
         if row < filteredEvents.count {
             let event = filteredEvents[row]
             rowView.appColor = ColorManager.shared.colorForApp(event.sourceApp)
@@ -616,26 +677,160 @@ extension ObservabilityView: NSTableViewDelegate {
         }
         return rowView
     }
+
+    private func createExpandedContentView(for event: HookEvent, row: Int) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+
+        // Payload section
+        let payloadLabel = NSTextField(labelWithString: "📦 Payload")
+        payloadLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        payloadLabel.textColor = NSColor(red: 0.6, green: 0.4, blue: 0.9, alpha: 1.0)
+        payloadLabel.drawsBackground = false
+        payloadLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(payloadLabel)
+
+        // Format payload as JSON
+        let payloadDict = event.payload.mapValues { $0.value }
+        let jsonData = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.prettyPrinted, .sortedKeys])
+        let jsonString = jsonData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+
+        // Payload text view
+        let payloadScrollView = NSScrollView()
+        payloadScrollView.translatesAutoresizingMaskIntoConstraints = false
+        payloadScrollView.hasVerticalScroller = true
+        payloadScrollView.autohidesScrollers = true
+        payloadScrollView.borderType = .lineBorder
+        payloadScrollView.wantsLayer = true
+        payloadScrollView.layer?.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 1.0).cgColor
+        payloadScrollView.layer?.borderColor = NSColor(red: 0.6, green: 0.4, blue: 0.9, alpha: 0.3).cgColor
+        payloadScrollView.layer?.borderWidth = 1
+        payloadScrollView.layer?.cornerRadius = 4
+
+        let payloadTextView = NSTextView()
+        payloadTextView.string = jsonString
+        payloadTextView.isEditable = false
+        payloadTextView.isSelectable = true
+        payloadTextView.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        payloadTextView.textColor = .white
+        payloadTextView.backgroundColor = .clear
+        payloadScrollView.documentView = payloadTextView
+
+        container.addSubview(payloadScrollView)
+
+        // Copy button
+        let copyButton = NSButton()
+        copyButton.title = "📋 Copy"
+        copyButton.bezelStyle = .rounded
+        copyButton.font = NSFont.boldSystemFont(ofSize: 11)
+        copyButton.wantsLayer = true
+        copyButton.layer?.backgroundColor = NSColor(red: 0.6, green: 0.4, blue: 0.9, alpha: 1.0).cgColor
+        copyButton.layer?.cornerRadius = 4
+        copyButton.contentTintColor = .white
+        copyButton.translatesAutoresizingMaskIntoConstraints = false
+        copyButton.target = self
+        copyButton.action = #selector(copyPayloadClicked(_:))
+        copyButton.tag = row
+        container.addSubview(copyButton)
+
+        // Chat transcript button (if chat exists)
+        if let chat = event.chat, !chat.isEmpty {
+            let chatButton = NSButton()
+            chatButton.title = "💬 View Chat (\(chat.count) messages)"
+            chatButton.bezelStyle = .rounded
+            chatButton.font = NSFont.boldSystemFont(ofSize: 11)
+            chatButton.wantsLayer = true
+            chatButton.layer?.backgroundColor = NSColor(red: 0.4, green: 0.2, blue: 0.8, alpha: 1.0).cgColor
+            chatButton.layer?.cornerRadius = 4
+            chatButton.contentTintColor = .white
+            chatButton.translatesAutoresizingMaskIntoConstraints = false
+            chatButton.target = self
+            chatButton.action = #selector(viewChatTranscriptClicked(_:))
+            chatButton.tag = row
+            container.addSubview(chatButton)
+
+            NSLayoutConstraint.activate([
+                chatButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+                chatButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+                chatButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
+                chatButton.heightAnchor.constraint(equalToConstant: 28)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            payloadLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            payloadLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+
+            payloadScrollView.topAnchor.constraint(equalTo: payloadLabel.bottomAnchor, constant: 6),
+            payloadScrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            payloadScrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            payloadScrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -45),
+
+            copyButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            copyButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            copyButton.widthAnchor.constraint(equalToConstant: 100),
+            copyButton.heightAnchor.constraint(equalToConstant: 28)
+        ])
+
+        return container
+    }
+
+    @objc private func copyPayloadClicked(_ sender: NSButton) {
+        let row = sender.tag
+        guard row >= 0 && row < filteredEvents.count else { return }
+        let event = filteredEvents[row]
+
+        // Format payload as JSON and copy to clipboard
+        let payloadDict = event.payload.mapValues { $0.value }
+        if let jsonData = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.prettyPrinted, .sortedKeys]),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(jsonString, forType: .string)
+
+            // Visual feedback
+            sender.title = "✅ Copied!"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                sender.title = "📋 Copy"
+            }
+        }
+    }
+
+    @objc private func viewChatTranscriptClicked(_ sender: NSButton) {
+        let row = sender.tag
+        guard row >= 0 && row < filteredEvents.count else { return }
+        let event = filteredEvents[row]
+
+        guard let chat = event.chat else { return }
+
+        // Create and show chat transcript window
+        chatTranscriptWindow = ChatTranscriptWindow(chat: chat)
+        chatTranscriptWindow?.makeKeyAndOrderFront(nil)
+    }
 }
 
 // MARK: - Custom Row View with Color Borders
 class CustomTableRowView: NSTableRowView {
     var appColor: NSColor = .clear
     var sessionColor: NSColor = .clear
+    var isExpanded: Bool = false
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
 
-        // Dark background
-        NSColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1.0).setFill()
+        // Dark background with highlight if expanded
+        if isExpanded {
+            NSColor(red: 0.18, green: 0.18, blue: 0.22, alpha: 1.0).setFill()
+        } else {
+            NSColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1.0).setFill()
+        }
         dirtyRect.fill()
 
-        // App color - left border
-        appColor.setFill()
-        NSRect(x: 0, y: 0, width: 4, height: bounds.height).fill()
-
-        // Session color - second border
-        sessionColor.setFill()
-        NSRect(x: 4, y: 0, width: 3, height: bounds.height).fill()
+        // Ring border for expanded rows
+        if isExpanded {
+            let borderPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
+            borderPath.lineWidth = 2
+            NSColor(red: 0.6, green: 0.4, blue: 0.9, alpha: 1.0).setStroke()
+            borderPath.stroke()
+        }
     }
 }

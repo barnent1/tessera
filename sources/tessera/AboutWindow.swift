@@ -16,8 +16,8 @@ class AboutWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.center()
 
-        // Set window level to float above other windows
-        window.level = .floating
+        // Normal window behavior
+        window.level = .normal
 
         super.init(window: window)
         self.aboutWindow = window

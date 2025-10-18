@@ -43,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         window.title = "Tessera"
         window.isReleasedWhenClosed = false
-        window.level = .floating  // Make it float above other windows so we can see it
+        window.level = .normal  // Normal window behavior - can be covered by other apps
         window.collectionBehavior = [.fullScreenPrimary, .managed]
         window.delegate = self
         applyWindowOpacity()  // Apply opacity from settings
@@ -59,9 +59,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Setup application menu with Quit option
         setupApplicationMenu()
 
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate(ignoringOtherApps: false)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
 
         print("Tessera: window shown, isVisible=\(window.isVisible)")
 

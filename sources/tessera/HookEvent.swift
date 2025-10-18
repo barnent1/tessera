@@ -151,6 +151,7 @@ class FakeEventGenerator {
     private let apps = ["tessera", "test-app", "demo-agent", "cc-hooks-observability"]
     private let eventTypes = ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Notification", "Stop", "SessionStart", "SessionEnd"]
     private let tools = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task"]
+    private var eventCounter = 0
 
     func sendRandomEvent() {
         let event = generateRandomEvent()
@@ -158,25 +159,223 @@ class FakeEventGenerator {
     }
 
     private func generateRandomEvent() -> [String: Any] {
+        eventCounter += 1
         let app = apps.randomElement()!
         let sessionId = "session-\(Int.random(in: 100...999))"
         let eventType = eventTypes.randomElement()!
 
         var payload: [String: Any] = [:]
+        var chat: [[String: Any]]? = nil
+        var summary: String? = nil
 
-        if eventType == "PreToolUse" || eventType == "PostToolUse" {
-            payload["tool_name"] = tools.randomElement()!
-            payload["tool_input"] = ["command": "ls -la"]
+        if eventType == "PreToolUse" {
+            let tool = tools.randomElement()!
+            payload["tool_name"] = tool
+
+            if tool == "Bash" {
+                payload["tool_input"] = ["command": "ls -la /tmp"]
+                summary = "Listing directory contents"
+            } else if tool == "Read" {
+                payload["tool_input"] = ["file_path": "/Users/test/project/main.swift"]
+                summary = "Reading source file"
+            } else if tool == "Write" {
+                payload["tool_input"] = [
+                    "file_path": "/Users/test/project/output.txt",
+                    "content": "Test content"
+                ]
+                summary = "Writing to file"
+            } else {
+                payload["tool_input"] = ["pattern": "*.swift"]
+                summary = "Searching for files"
+            }
+
+            // Add chat transcript for some events
+            if eventCounter % 2 == 0 {
+                chat = generateSampleChat(toolName: tool)
+            }
+
+        } else if eventType == "PostToolUse" {
+            let tool = tools.randomElement()!
+            payload["tool_name"] = tool
+            payload["tool_output"] = ["result": "Operation completed successfully"]
+            summary = "Tool execution completed"
+
+            // Add chat transcript
+            if eventCounter % 2 == 1 {
+                chat = generateSampleChat(toolName: tool)
+            }
+
         } else if eventType == "UserPromptSubmit" {
-            payload["prompt"] = "This is a test prompt message from the fake event generator"
+            let prompts = [
+                "Read the main.swift file and explain what it does",
+                "Create a new function to handle user input",
+                "Search for all Swift files in the project",
+                "Fix the compilation error in the AppDelegate",
+                "Add error handling to the network request"
+            ]
+            payload["prompt"] = prompts.randomElement()!
+            summary = "User submitted new request"
+
+            // Always include chat for UserPromptSubmit
+            chat = generateConversationChat()
+
+        } else if eventType == "SessionStart" {
+            payload["source"] = "startup"
+            summary = "New session started"
+        } else if eventType == "Notification" {
+            payload["message"] = "Processing completed"
+            summary = "System notification"
         }
 
-        return [
+        var result: [String: Any] = [
             "source_app": app,
             "session_id": sessionId,
             "hook_event_type": eventType,
             "payload": payload,
             "timestamp": Int(Date().timeIntervalSince1970 * 1000)
+        ]
+
+        if let chat = chat {
+            result["chat"] = chat
+        }
+
+        if let summary = summary {
+            result["summary"] = summary
+        }
+
+        return result
+    }
+
+    private func generateSampleChat(toolName: String) -> [[String: Any]] {
+        return [
+            [
+                "type": "user",
+                "message": [
+                    "role": "user",
+                    "content": "Please use the \(toolName) tool to help with this task"
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date())
+            ],
+            [
+                "type": "assistant",
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "text",
+                            "text": "I'll use the \(toolName) tool to help you with that."
+                        ],
+                        [
+                            "type": "tool_use",
+                            "name": toolName,
+                            "input": ["command": "test command"]
+                        ]
+                    ]
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date())
+            ],
+            [
+                "type": "system",
+                "content": "PreToolUse:\(toolName) - Tool execution started",
+                "timestamp": ISO8601DateFormatter().string(from: Date())
+            ]
+        ]
+    }
+
+    private func generateConversationChat() -> [[String: Any]] {
+        return [
+            [
+                "type": "user",
+                "message": [
+                    "role": "user",
+                    "content": "I need help implementing a new feature for the app"
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-120))
+            ],
+            [
+                "type": "assistant",
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "text",
+                            "text": "I'd be happy to help! Let me first read the current codebase to understand the structure."
+                        ],
+                        [
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": ["file_path": "/Users/test/project/main.swift"]
+                        ]
+                    ]
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-110))
+            ],
+            [
+                "type": "system",
+                "content": "PreToolUse:Read - Reading file main.swift",
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-100))
+            ],
+            [
+                "type": "system",
+                "content": "PostToolUse:Read - File read successfully (245 lines)",
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-95))
+            ],
+            [
+                "type": "assistant",
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "text",
+                            "text": "I've reviewed the code. Now I'll create a new function to implement the feature you requested."
+                        ],
+                        [
+                            "type": "tool_use",
+                            "name": "Write",
+                            "input": [
+                                "file_path": "/Users/test/project/NewFeature.swift",
+                                "content": "func newFeature() {\n    // Implementation\n}"
+                            ]
+                        ]
+                    ]
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-90))
+            ],
+            [
+                "type": "user",
+                "message": [
+                    "role": "user",
+                    "content": "Great! Can you also add error handling?"
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
+            ],
+            [
+                "type": "assistant",
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "text",
+                            "text": "Absolutely! Let me update the file with proper error handling."
+                        ],
+                        [
+                            "type": "tool_use",
+                            "name": "Edit",
+                            "input": [
+                                "file_path": "/Users/test/project/NewFeature.swift",
+                                "old_string": "func newFeature() {\n    // Implementation\n}",
+                                "new_string": "func newFeature() throws {\n    do {\n        // Implementation\n    } catch {\n        throw FeatureError.failed\n    }\n}"
+                            ]
+                        ]
+                    ]
+                ],
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-50))
+            ],
+            [
+                "type": "system",
+                "content": "PreToolUse:Edit - Editing file NewFeature.swift",
+                "timestamp": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-40))
+            ]
         ]
     }
 
