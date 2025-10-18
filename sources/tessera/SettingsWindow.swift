@@ -5,9 +5,10 @@ class SettingsWindow: NSWindow {
     private var fontSizeSlider: NSSlider!
     private var fontNamePopup: NSPopUpButton!
     private var foregroundColorWell: NSColorWell!
+    private var projectsDirectoryLabel: NSTextField!
 
     init() {
-        let rect = NSRect(x: 0, y: 0, width: 400, height: 240)
+        let rect = NSRect(x: 0, y: 0, width: 400, height: 320)
         super.init(
             contentRect: rect,
             styleMask: [.titled, .closable],
@@ -25,10 +26,10 @@ class SettingsWindow: NSWindow {
     }
 
     private func setupUI() {
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 320))
         self.contentView = contentView
 
-        var yPos: CGFloat = 200
+        var yPos: CGFloat = 280
 
         // Opacity
         addLabel("Window Opacity:", at: NSPoint(x: 20, y: yPos), to: contentView)
@@ -79,6 +80,25 @@ class SettingsWindow: NSWindow {
         foregroundColorWell.target = self
         foregroundColorWell.action = #selector(foregroundColorChanged)
         contentView.addSubview(foregroundColorWell)
+        yPos -= 50
+
+        // Projects Directory
+        addLabel("Projects Directory:", at: NSPoint(x: 20, y: yPos + 10), to: contentView)
+
+        // Directory path label (truncated middle)
+        projectsDirectoryLabel = NSTextField(labelWithString: "")
+        projectsDirectoryLabel.frame = NSRect(x: 150, y: yPos + 10, width: 180, height: 20)
+        projectsDirectoryLabel.lineBreakMode = .byTruncatingMiddle
+        projectsDirectoryLabel.font = NSFont.systemFont(ofSize: 11)
+        contentView.addSubview(projectsDirectoryLabel)
+
+        // Choose button
+        let chooseButton = NSButton(frame: NSRect(x: 340, y: yPos + 6, width: 50, height: 28))
+        chooseButton.title = "Choose..."
+        chooseButton.bezelStyle = .rounded
+        chooseButton.target = self
+        chooseButton.action = #selector(chooseProjectsDirectory)
+        contentView.addSubview(chooseButton)
 
         // Close button
         let closeButton = NSButton(frame: NSRect(x: 290, y: 20, width: 90, height: 30))
@@ -110,6 +130,9 @@ class SettingsWindow: NSWindow {
         }
 
         foregroundColorWell.color = settings.foregroundColor
+
+        // Load projects directory
+        projectsDirectoryLabel.stringValue = settings.projectsDirectory
     }
 
     private func updateFontSizeLabel() {
@@ -137,6 +160,27 @@ class SettingsWindow: NSWindow {
 
     @objc private func foregroundColorChanged() {
         Settings.shared.foregroundColor = foregroundColorWell.color
+    }
+
+    @objc private func chooseProjectsDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Select the directory containing your projects"
+        panel.prompt = "Choose"
+
+        // Set initial directory to current setting
+        let currentPath = Settings.shared.projectsDirectory
+        panel.directoryURL = URL(fileURLWithPath: currentPath)
+
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+
+            Settings.shared.projectsDirectory = url.path
+            self?.projectsDirectoryLabel.stringValue = url.path
+        }
     }
 
     @objc private func closeWindow() {

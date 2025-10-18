@@ -10,6 +10,7 @@ class Settings {
         static let foregroundColor = "foregroundColor"
         static let backgroundColor = "backgroundColor"
         static let cursorColor = "cursorColor"
+        static let projectsDirectory = "projectsDirectory"
     }
 
     // Notification for when settings change
@@ -96,6 +97,21 @@ class Settings {
                 UserDefaults.standard.set(data, forKey: Keys.cursorColor)
                 postChangeNotification()
             }
+        }
+    }
+
+    var projectsDirectory: String {
+        get {
+            if let path = UserDefaults.standard.string(forKey: Keys.projectsDirectory) {
+                return path
+            }
+            // Default to ~/Projects
+            let homeDir = FileManager.default.homeDirectoryForCurrentUser
+            return homeDir.appendingPathComponent("Projects").path
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.projectsDirectory)
+            postChangeNotification()
         }
     }
 
