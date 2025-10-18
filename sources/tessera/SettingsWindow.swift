@@ -21,7 +21,7 @@ class SettingsWindow: NSWindow {
 
         self.title = "Tessera Settings"
         self.isReleasedWhenClosed = false
-        self.level = .floating  // Ensure it appears above other windows
+        self.level = .normal  // Normal window behavior
         self.center()
 
         setupUI()

@@ -11,6 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: SettingsWindow?
     private var aboutWindow: AboutWindowController?
 
+    // Observability panel
+    var isShowingObservability = false
+    private var observabilityView: ObservabilityView?
+
     private enum Prefs {
         static let savedFrame = "LayoutControllerSavedFrame"
     }
@@ -39,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         window.title = "Tessera"
         window.isReleasedWhenClosed = false
-        window.level = .floating  // Make it float above other windows so we can see it
+        window.level = .normal  // Normal window behavior - can be covered by other apps
         window.collectionBehavior = [.fullScreenPrimary, .managed]
         window.delegate = self
         applyWindowOpacity()  // Apply opacity from settings
@@ -55,9 +59,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Setup application menu with Quit option
         setupApplicationMenu()
 
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate(ignoringOtherApps: false)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
 
         print("Tessera: window shown, isVisible=\(window.isVisible)")
 
@@ -204,6 +207,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
             contentView.needsDisplay = true
         }
+    }
+
+    @objc func toggleObservability() {
+        isShowingObservability.toggle()
+
+        if isShowingObservability {
+            // Hide terminals and show observability panel
+            for terminal in leftTerminals {
+                terminal.isHidden = true
+            }
+            rightTerminal?.isHidden = true
+
+            // Create observability view if needed
+            if observabilityView == nil {
+                observabilityView = ObservabilityView(frame: .zero)
+                contentView.addSubview(observabilityView!)
+            }
+
+            // Position observability view
+            let frame = NSRect(
+                x: 0,
+                y: contentView.toolbarHeight,
+                width: contentView.bounds.width,
+                height: contentView.bounds.height - contentView.toolbarHeight
+            )
+            observabilityView?.frame = frame
+            observabilityView?.isHidden = false
+            observabilityView?.needsLayout = true
+            observabilityView?.layout()
+
+        } else {
+            // Hide observability panel and show terminals
+            observabilityView?.isHidden = true
+
+            for terminal in leftTerminals {
+                terminal.isHidden = false
+            }
+            rightTerminal?.isHidden = false
+
+            relayout()
+        }
+
+        // Update the button icon
+        contentView.updateObservabilityIcon(isShowingObservability: isShowingObservability)
+        contentView.needsDisplay = true
     }
 
     func promoteLeftTerminal(at index: Int) {
@@ -392,6 +440,7 @@ class ContentView: NSView {
     let toolbarHeight: CGFloat = 44
     private var isDraggingDivider = false
     private let dividerHitWidth: CGFloat = 8  // Wider hit area for easier grabbing
+    private var observabilityButton: NSButton!
 
     // Drag-and-drop state
     private var isDraggingTerminal = false
@@ -501,6 +550,24 @@ class ContentView: NSView {
         fullscreenButton.target = delegate
         fullscreenButton.action = #selector(AppDelegate.toggleFullscreen)
         toolbar.addSubview(fullscreenButton)
+
+        // Observability toggle button
+        observabilityButton = NSButton(frame: NSRect(x: 94, y: 5, width: 34, height: 34))
+        observabilityButton.title = ""
+        observabilityButton.bezelStyle = .rounded
+        observabilityButton.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Toggle Observability")
+        observabilityButton.contentTintColor = NSColor.systemOrange
+        observabilityButton.target = delegate
+        observabilityButton.action = #selector(AppDelegate.toggleObservability)
+        toolbar.addSubview(observabilityButton)
+    }
+
+    func updateObservabilityIcon(isShowingObservability: Bool) {
+        if isShowingObservability {
+            observabilityButton.image = NSImage(systemSymbolName: "tv.fill", accessibilityDescription: "Show Terminals")
+        } else {
+            observabilityButton.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Show Observability")
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -827,3 +894,4 @@ class ContentView: NSView {
         toolbar.frame = toolbarFrame
     }
 }
+
